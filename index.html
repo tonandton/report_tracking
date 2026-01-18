@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="th" class="scroll-smooth">
+
+<head>
+     <meta charset="UTF-8" />
+     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+     <title>Daily Flow - Todo & KPI Tracker</title>
+     <script src="https://cdn.tailwindcss.com"></script>
+     <script>
+          tailwind.config = {
+               darkMode: 'class',
+               theme: { extend: { fontFamily: { sans: ['Sarabun', 'system-ui', 'sans-serif'] } } }
+          }
+     </script>
+     <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap"
+          rel="stylesheet">
+     <!-- Sortable.js for drag & drop -->
+     <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
+     <!-- Chart.js for KPI chart -->
+     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+
+<body class="bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 min-h-screen transition-colors duration-300">
+
+     <!-- Header -->
+     <header class="bg-white dark:bg-gray-800 shadow-sm sticky top-0 z-10">
+          <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
+               <div class="flex items-center gap-3">
+                    <h1 class="text-2xl font-bold text-indigo-600 dark:text-indigo-400">Report Tracking</h1>
+                    <span class="text-sm text-gray-500 dark:text-gray-400" id="currentDate"></span>
+               </div>
+               <div class="flex items-center gap-4">
+                    <button onclick="resetDay()"
+                         class="px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 text-sm font-medium transition">
+                         เริ่มวันใหม่
+                    </button>
+                    <button id="theme-toggle"
+                         class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition">🌙</button>
+               </div>
+          </div>
+     </header>
+
+     <!-- Main Content -->
+     <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+               <!-- Todo List Section -->
+               <div class="lg:col-span-2 space-y-6">
+                    <!-- Add Task -->
+                    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6">
+                         <h2 class="text-xl font-semibold mb-4">เพิ่มงานวันนี้</h2>
+                         <div class="space-y-4">
+                              <input type="text" id="taskInput" placeholder="พิมพ์งานใหม่..."
+                                   class="w-full px-4 py-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                              <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                   <div>
+                                        <label class="block text-sm font-medium mb-1">วันที่ครบกำหนด</label>
+                                        <input type="date" id="dueDate"
+                                             class="w-full px-4 py-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                                   </div>
+                                   <div>
+                                        <label class="block text-sm font-medium mb-1">เวลา</label>
+                                        <input type="time" id="dueTime"
+                                             class="w-full px-4 py-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                                   </div>
+                                   <div>
+                                        <label class="block text-sm font-medium mb-1">ความสำคัญ</label>
+                                        <select id="priority"
+                                             class="w-full px-4 py-3 rounded-lg border bg-white dark:bg-gray-700">
+                                             <option value="high">สูง (แดง)</option>
+                                             <option value="medium" selected>กลาง (เหลือง)</option>
+                                             <option value="low">ต่ำ (เขียว)</option>
+                                        </select>
+                                   </div>
+                              </div>
+                              <button onclick="addTask()"
+                                   class="w-full py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition font-medium">เพิ่มงาน</button>
+                         </div>
+                    </div>
+
+                    <!-- Task List -->
+                    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6">
+                         <div class="flex justify-between items-center mb-4">
+                              <h2 class="text-xl font-semibold">รายการงานวันนี้</h2>
+                              <div class="text-sm text-gray-500 dark:text-gray-400">
+                                   เสร็จแล้ว <span id="completedCount"
+                                        class="font-bold text-green-600 dark:text-green-400">0</span> / ทั้งหมด <span
+                                        id="totalCount" class="font-bold">0</span>
+                              </div>
+                         </div>
+                         <div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5 mb-6">
+                              <div id="progressBar" class="bg-green-500 h-2.5 rounded-full transition-all duration-500"
+                                   style="width: 0%"></div>
+                         </div>
+                         <ul id="taskList" class="space-y-3"></ul>
+                    </div>
+               </div>
+
+               <!-- KPI & Report & Backup -->
+               <div class="space-y-6">
+                    <!-- KPI -->
+                    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 text-center">
+                         <h2 class="text-lg font-semibold mb-3">KPI วันนี้</h2>
+                         <div class="text-5xl font-bold text-indigo-600 dark:text-indigo-400" id="kpiPercent">0%</div>
+                         <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">ความสำเร็จวันนี้</p>
+                         <canvas id="kpiChart" class="mt-4" height="150"></canvas>
+                    </div>
+
+                    <!-- Stats -->
+                    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6">
+                         <h3 class="text-lg font-semibold mb-4">สถิติวันนี้</h3>
+                         <div class="space-y-3">
+                              <div class="flex justify-between"><span>งานเสร็จ</span><span id="completedStat"
+                                        class="font-medium text-green-600 dark:text-green-400">0</span></div>
+                              <div class="flex justify-between"><span>งานค้าง</span><span id="pendingStat"
+                                        class="font-medium text-amber-600 dark:text-amber-400">0</span></div>
+                         </div>
+                    </div>
+
+                    <!-- Daily Report -->
+                    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6">
+                         <h2 class="text-xl font-semibold mb-4">Daily Report วันนี้</h2>
+                         <div id="reportEditMode">
+                              <textarea id="report" rows="5" placeholder="สรุปสิ่งที่ทำวันนี้... สั้น ๆ ก็ได้"
+                                   class="w-full px-4 py-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"></textarea>
+                              <div class="flex gap-3 mt-4">
+                                   <button onclick="saveReport()"
+                                        class="flex-1 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-medium">บันทึกสรุป</button>
+                                   <button onclick="cancelEdit()"
+                                        class="flex-1 py-3 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition font-medium">ยกเลิก</button>
+                              </div>
+                         </div>
+                         <div id="reportPreviewMode" class="hidden">
+                              <div
+                                   class="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600">
+                                   <p class="text-sm text-gray-500 dark:text-gray-400 mb-2">บันทึกเมื่อ: <span
+                                             id="reportDate"></span></p>
+                                   <p id="reportPreview" class="whitespace-pre-wrap text-gray-800 dark:text-gray-200">
+                                   </p>
+                              </div>
+                              <button onclick="editReport()"
+                                   class="mt-4 w-full py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition font-medium">แก้ไขรายงาน</button>
+                         </div>
+                         <p id="reportStatus" class="mt-3 text-sm text-center text-gray-500"></p>
+                    </div>
+               </div>
+          </div>
+     </main>
+
+     <!-- History Section -->
+     <section class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <div class="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6">
+               <h2 class="text-2xl font-bold mb-6 text-indigo-600 dark:text-indigo-400">ประวัติงานย้อนหลัง</h2>
+               <div id="historyList" class="space-y-4"></div>
+               <p id="noHistory" class="text-center text-gray-500 dark:text-gray-400 mt-4 hidden">ยังไม่มีประวัติงาน</p>
+          </div>
+     </section>
+
+     <script src="script.js"></script>
+</body>
+
+</html>
