@@ -39,7 +39,7 @@ async function loadAllData() {
 
     currentTasks = await tasksRes.json();
     currentReport = await reportRes.json();
-    historyData = await historyRes.json();
+    historyData = (await historyRes.json()) || []; // ถ้า null ให้เป็น array ว่าง
 
     renderTasks();
     loadReport();
@@ -51,28 +51,12 @@ async function loadAllData() {
   }
 }
 
-// Render Tasks
+// Render Tasks + Drag & Drop
 function renderTasks() {
   const list = document.getElementById("taskList");
   if (!list) return;
   list.innerHTML = "";
   let completed = 0;
-
-  // Sort: ใช้ order ถ้ามี, ถ้าไม่มีใช้ priority + due
-  currentTasks.sort((a, b) => {
-    const orderA = a.order !== undefined ? a.order : Infinity;
-    const orderB = b.order !== undefined ? b.order : Infinity;
-    if (orderA !== orderB) return orderA - orderB;
-
-    const prioOrder = { high: 0, medium: 1, low: 2 };
-    const prioA = prioOrder[a.priority || "medium"];
-    const prioB = prioOrder[b.priority || "medium"];
-    if (prioA !== prioB) return prioA - prioB;
-
-    if (!a.due) return 1;
-    if (!b.due) return -1;
-    return new Date(a.due) - new Date(b.due);
-  });
 
   currentTasks.forEach((task) => {
     const li = document.createElement("li");
@@ -127,7 +111,7 @@ function renderTasks() {
     if (task.done) completed++;
   });
 
-  // Drag & Drop จัดลำดับ
+  // Drag & Drop
   new Sortable(list, {
     animation: 150,
     onEnd: async () => {
@@ -159,7 +143,7 @@ function renderTasks() {
     },
   });
 
-  // อัปเดต stats
+  // Stats
   const total = currentTasks.length;
   const percent = total ? Math.round((completed / total) * 100) : 0;
   document.getElementById("totalCount").textContent = total;
@@ -210,10 +194,7 @@ async function toggleTask(id) {
     const res = await fetch(`${API_BASE}/tasks/${id}/toggle`, {
       method: "PUT",
     });
-    if (!res.ok) {
-      const errData = await res.json();
-      throw new Error(errData.error || "อัปเดตไม่สำเร็จ");
-    }
+    if (!res.ok) throw new Error("อัปเดตไม่สำเร็จ");
     await loadAllData();
   } catch (err) {
     showMessage("เกิดข้อผิดพลาด: " + err.message, true);
@@ -225,10 +206,7 @@ async function deleteTask(id) {
   if (!confirm("แน่ใจที่จะลบ?")) return;
   try {
     const res = await fetch(`${API_BASE}/tasks/${id}`, { method: "DELETE" });
-    if (!res.ok) {
-      const errData = await res.json();
-      throw new Error(errData.error || "ลบไม่สำเร็จ");
-    }
+    if (!res.ok) throw new Error("ลบไม่สำเร็จ");
     await loadAllData();
     showMessage("ลบงานสำเร็จ!");
   } catch (err) {
@@ -311,7 +289,7 @@ function renderHistory() {
             <div>
                 <span class="text-lg">${new Date(entry.date).toLocaleDateString("th-TH", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</span>
                 <span class="text-sm text-gray-500 dark:text-gray-400 block">
-                    ${entry.tasks.filter((t) => t.done).length} เสร็จ / ${entry.tasks.length} ทั้งหมด
+                    ${entry.tasks ? entry.tasks.filter((t) => t.done).length : 0} เสร็จ / ${entry.tasks ? entry.tasks.length : 0} ทั้งหมด
                 </span>
             </div>
             <span class="text-gray-500 dark:text-gray-400">คลิกเพื่อดูรายละเอียด</span>
@@ -320,7 +298,7 @@ function renderHistory() {
       const content = document.createElement("div");
       content.className = "hidden px-5 py-4 bg-white dark:bg-gray-800";
 
-      if (entry.tasks.length > 0) {
+      if (entry.tasks && Array.isArray(entry.tasks) && entry.tasks.length > 0) {
         const ul = document.createElement("ul");
         ul.className = "space-y-4";
 
@@ -410,8 +388,8 @@ function updateKpiChart() {
 
   const labels = historyData.slice(-7).map((e) => e.date);
   const data = historyData.slice(-7).map((e) => {
-    const completed = e.tasks.filter((t) => t.done).length;
-    return e.tasks.length ? Math.round((completed / e.tasks.length) * 100) : 0;
+    const completed = e.tasks ? e.tasks.filter((t) => t.done).length : 0;
+    return e.tasks ? Math.round((completed / e.tasks.length) * 100) : 0;
   });
 
   if (kpiChart) kpiChart.destroy();
@@ -454,3 +432,162 @@ async function resetDay() {
 
 // Initial Load
 loadAllData();
+
+// CSS สำหรับ animation
+const style = document.createElement("style");
+style.textContent = `
+    @keyframes fade-in-out {
+        0% { opacity: 0; transform: translateY(20px); }
+        20% { opacity: 1; transform: translateY(0); }
+        80% { opacity: 1; transform: translateY(0); }
+        100% { opacity: 0; transform: translateY(20px); }
+    }
+    .animate-fade-in-out {
+        animation: fade-in-out 3s forwards;
+    }
+`;
+document.head.appendChild(style);
+
+// Render History (ปรับให้ตรวจสอบ entry.tasks ก่อน)
+function renderHistory() {
+  const container = document.getElementById("historyList");
+  if (!container) return;
+  container.innerHTML = "";
+
+  const noHistory = document.getElementById("noHistory");
+  if (historyData.length === 0) {
+    noHistory?.classList.remove("hidden");
+    return;
+  }
+  noHistory?.classList.add("hidden");
+
+  historyData
+    .slice()
+    .reverse()
+    .forEach((entry, hIndex) => {
+      const div = document.createElement("div");
+      div.className =
+        "border border-gray-200 dark:border-gray-600 rounded-lg overflow-hidden mb-4";
+
+      const btn = document.createElement("button");
+      btn.className =
+        "w-full px-5 py-4 bg-gray-100 dark:bg-gray-700 text-left font-medium flex justify-between items-center hover:bg-gray-200 dark:hover:bg-gray-600 transition";
+      btn.innerHTML = `
+            <div>
+                <span class="text-lg">${new Date(entry.date).toLocaleDateString("th-TH", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</span>
+                <span class="text-sm text-gray-500 dark:text-gray-400 block">
+                    ${entry.tasks && Array.isArray(entry.tasks) ? entry.tasks.filter((t) => t.done).length : 0} เสร็จ / ${entry.tasks && Array.isArray(entry.tasks) ? entry.tasks.length : 0} ทั้งหมด
+                </span>
+            </div>
+            <span class="text-gray-500 dark:text-gray-400">คลิกเพื่อดูรายละเอียด</span>
+        `;
+
+      const content = document.createElement("div");
+      content.className = "hidden px-5 py-4 bg-white dark:bg-gray-800";
+
+      if (entry.tasks && Array.isArray(entry.tasks) && entry.tasks.length > 0) {
+        const ul = document.createElement("ul");
+        ul.className = "space-y-4";
+
+        entry.tasks.forEach((t, tIndex) => {
+          const li = document.createElement("li");
+          li.className =
+            "flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600";
+
+          const prioColor =
+            t.priority === "high"
+              ? "bg-red-500"
+              : t.priority === "low"
+                ? "bg-green-500"
+                : "bg-yellow-500";
+          const prioBadge = `<span class="inline-block w-3 h-3 rounded-full ${prioColor}"></span>`;
+
+          let dueDisplay = "";
+          if (t.due) {
+            const dueDT = new Date(t.due);
+            const overdue = !t.done && dueDT < new Date();
+            dueDisplay = `<span class="text-sm ${overdue ? "text-red-600 font-medium" : "text-gray-500 dark:text-gray-400"}">
+                        ครบกำหนด: ${dueDT.toLocaleString("th-TH", { dateStyle: "short", timeStyle: "short" })}
+                        ${overdue ? " (เลยกำหนด!)" : ""}
+                    </span>`;
+          }
+
+          let durationDisplay = "";
+          if (t.done && t.created_at && t.completed_at) {
+            const diff = new Date(t.completed_at) - new Date(t.created_at);
+            const mins = Math.floor(diff / 60000);
+            const hours = Math.floor(mins / 60);
+            const remainingMins = mins % 60;
+            durationDisplay = `<span class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                        ใช้เวลา: ${hours > 0 ? hours + " ชม. " : ""}${remainingMins} นาที
+                    </span>`;
+          }
+
+          li.innerHTML = `
+                    <div class="flex items-center gap-3 flex-1">
+                        <input type="checkbox" ${t.done ? "checked" : ""} class="w-5 h-5 text-indigo-600 rounded" 
+                               onchange="toggleHistoryTask(${hIndex}, ${tIndex})">
+                        ${prioBadge}
+                        <span class="flex-1 ${t.done ? "line-through text-gray-500 dark:text-gray-400" : ""}">${t.text}</span>
+                    </div>
+                    <div class="flex flex-col items-end text-right">
+                        ${dueDisplay}
+                        ${durationDisplay}
+                    </div>
+                `;
+          ul.appendChild(li);
+        });
+        content.appendChild(ul);
+      } else {
+        content.innerHTML +=
+          '<p class="text-gray-500 dark:text-gray-400 text-center py-4">ไม่มีงานในวันนั้น</p>';
+      }
+
+      if (entry.report) {
+        content.innerHTML += `
+                <hr class="my-5 border-gray-200 dark:border-gray-700">
+                <p class="text-base font-semibold text-gray-800 dark:text-gray-200 mb-2">Daily Report:</p>
+                <p class="whitespace-pre-wrap text-gray-700 dark:text-gray-300">${entry.report}</p>
+                <p class="text-sm text-gray-500 dark:text-gray-400 mt-2">บันทึกเมื่อ: ${entry.reportDate}</p>
+            `;
+      }
+
+      btn.onclick = () => content.classList.toggle("hidden");
+      div.appendChild(btn);
+      div.appendChild(content);
+      container.appendChild(div);
+    });
+}
+
+// Update KPI Chart (ปรับให้ตรวจสอบ entry.tasks ก่อน)
+function updateKpiChart() {
+  const ctx = document.getElementById("kpiChart")?.getContext("2d");
+  if (!ctx) return;
+
+  const labels = historyData.slice(-7).map((e) => e.date);
+  const data = historyData.slice(-7).map((e) => {
+    if (!e.tasks || !Array.isArray(e.tasks) || e.tasks.length === 0) return 0;
+    const completed = e.tasks.filter((t) => t.done).length;
+    return Math.round((completed / e.tasks.length) * 100);
+  });
+
+  if (kpiChart) kpiChart.destroy();
+  kpiChart = new Chart(ctx, {
+    type: "line",
+    data: {
+      labels,
+      datasets: [
+        {
+          label: "KPI % เสร็จ",
+          data,
+          borderColor: "#4f46e5",
+          tension: 0.2,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      scales: { y: { beginAtZero: true, max: 100 } },
+    },
+  });
+}

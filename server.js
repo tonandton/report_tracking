@@ -14,17 +14,17 @@ const pool = new Pool({
   port: 5432,
 });
 
-// Middleware เพื่อ log request (ช่วย debug)
+// Middleware log request (ช่วย debug)
 app.use((req, res, next) => {
   console.log(`Request: ${req.method} ${req.url}`);
   next();
 });
 
-// Get all tasks (for today or all - ปรับตามต้องการ)
+// GET /tasks
 app.get("/tasks", async (req, res) => {
   try {
     const result = await pool.query(
-      'SELECT * FROM tasks ORDER BY "order", priority, due',
+      "SELECT * FROM tasks ORDER BY priority, due",
     );
     res.json(result.rows);
   } catch (err) {
@@ -33,11 +33,9 @@ app.get("/tasks", async (req, res) => {
   }
 });
 
-// Add new task
+// POST /tasks (เพิ่ม task)
 app.post("/tasks", async (req, res) => {
   const { text, due, priority } = req.body;
-  if (!text) return res.status(400).json({ error: "Text is required" });
-
   try {
     const result = await pool.query(
       "INSERT INTO tasks (text, due, priority) VALUES ($1, $2, $3) RETURNING *",
@@ -50,7 +48,7 @@ app.post("/tasks", async (req, res) => {
   }
 });
 
-// Toggle done
+// PUT /tasks/:id/toggle (toggle done)
 app.put("/tasks/:id/toggle", async (req, res) => {
   const { id } = req.params;
   try {
@@ -67,12 +65,12 @@ app.put("/tasks/:id/toggle", async (req, res) => {
   }
 });
 
-// Delete task
+// DELETE /tasks/:id (ลบ task)
 app.delete("/tasks/:id", async (req, res) => {
   const { id } = req.params;
   try {
     const result = await pool.query(
-      "DELETE FROM tasks WHERE id = $1 RETURNING id",
+      "DELETE FROM tasks WHERE id = $1 RETURNING *",
       [id],
     );
     if (result.rowCount === 0)
@@ -84,25 +82,21 @@ app.delete("/tasks/:id", async (req, res) => {
   }
 });
 
-// Reorder tasks
+// POST /tasks/reorder (จัดลำดับ task)
 app.post("/tasks/reorder", async (req, res) => {
-  const { order } = req.body; // order เป็น array ของ id [id1, id2, ...]
-
-  if (!Array.isArray(order) || order.length === 0) {
-    return res.status(400).json({ error: "Invalid order array" });
-  }
+  const { order } = req.body;
+  if (!Array.isArray(order))
+    return res.status(400).json({ error: "Invalid order" });
 
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-
     for (let i = 0; i < order.length; i++) {
       await client.query('UPDATE tasks SET "order" = $1 WHERE id = $2', [
         i,
         order[i],
       ]);
     }
-
     await client.query("COMMIT");
     res.json({ success: true });
   } catch (err) {
@@ -114,7 +108,7 @@ app.post("/tasks/reorder", async (req, res) => {
   }
 });
 
-// Get report for today
+// GET /report (ดึง report วันนี้)
 app.get("/report", async (req, res) => {
   try {
     const result = await pool.query(
@@ -127,17 +121,12 @@ app.get("/report", async (req, res) => {
   }
 });
 
-// Save/update report
+// POST /report (บันทึก report)
 app.post("/report", async (req, res) => {
   const { summary } = req.body;
-  if (!summary) return res.status(400).json({ error: "Summary is required" });
-
   try {
     const result = await pool.query(
-      `INSERT INTO daily_reports (report_date, summary) 
-       VALUES (CURRENT_DATE, $1) 
-       ON CONFLICT (report_date) DO UPDATE SET summary = $1, report_time = CURRENT_TIMESTAMP 
-       RETURNING *`,
+      "INSERT INTO daily_reports (report_date, summary) VALUES (CURRENT_DATE, $1) ON CONFLICT (report_date) DO UPDATE SET summary = $1, report_time = CURRENT_TIMESTAMP RETURNING *",
       [summary],
     );
     res.json(result.rows[0]);
@@ -147,7 +136,7 @@ app.post("/report", async (req, res) => {
   }
 });
 
-// Get history
+// GET /history (ดึง history)
 app.get("/history", async (req, res) => {
   try {
     const result = await pool.query(
@@ -160,7 +149,7 @@ app.get("/history", async (req, res) => {
   }
 });
 
-// Reset day (ย้ายข้อมูลวันนี้ไป history แล้วล้างวันนี้)
+// POST /reset-day
 app.post("/reset-day", async (req, res) => {
   const client = await pool.connect();
   try {
@@ -212,6 +201,34 @@ app.post("/reset-day", async (req, res) => {
     res.status(500).json({ error: err.message });
   } finally {
     client.release();
+  }
+});
+
+// Export JSON
+app.get("/export-json", async (req, res) => {
+  try {
+    const [tasks, reports, history] = await Promise.all([
+      pool.query("SELECT * FROM tasks"),
+      pool.query("SELECT * FROM daily_reports"),
+      pool.query("SELECT * FROM history"),
+    ]);
+
+    const data = {
+      tasks: tasks.rows,
+      reports: reports.rows,
+      history: history.rows,
+    };
+
+    const jsonString = JSON.stringify(data, null, 2);
+    res.setHeader("Content-Type", "application/json");
+    res.setHeader(
+      "Content-Disposition",
+      "attachment; filename=daily-flow-export.json",
+    );
+    res.send(jsonString);
+  } catch (err) {
+    console.error("Export JSON error:", err);
+    res.status(500).json({ error: err.message });
   }
 });
 
