@@ -69,34 +69,58 @@
 └── README.md         # เอกสารโปรเจกต์
 ```
 
-## Create DB base
+## 🗄️ Database Schema
 
-CREATE DATABASE db_flow;
+ถ้าต้องการยกระดับโปรเจกต์จาก LocalStorage ไปเป็นฐานข้อมูลจริง  
+สามารถใช้ PostgreSQL ได้ตาม schema ด้านล่างนี้
 
--- ตาราง Tasks (todo list)
+```sql
+-- สร้างฐานข้อมูล (ทำครั้งเดียว)
+CREATE DATABASE db_flow
+    WITH
+    OWNER = postgres
+    ENCODING = 'UTF8'
+    LC_COLLATE = 'Thai_Thailand.1252'
+    LC_CTYPE = 'Thai_Thailand.1252'
+    TEMPLATE = template0
+    CONNECTION LIMIT = -1;
+
+-- เชื่อมต่อฐานข้อมูลก่อน
+-- \c db_flow
+
+-- ตาราง Tasks (รายการงาน Todo)
 CREATE TABLE IF NOT EXISTS tasks (
-id SERIAL PRIMARY KEY,
-text TEXT NOT NULL,
-done BOOLEAN DEFAULT FALSE,
-due TIMESTAMP,
-priority VARCHAR(20) DEFAULT 'medium', -- high, medium, low
-created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-completed_at TIMESTAMP,
-"order" INTEGER DEFAULT 0 -- สำหรับลำดับ drag & drop
+    id              SERIAL PRIMARY KEY,
+    text            TEXT NOT NULL,
+    done            BOOLEAN DEFAULT FALSE,
+    due             TIMESTAMP,                    -- วันเวลาครบกำหนด
+    priority        VARCHAR(20) DEFAULT 'medium', -- high, medium, low
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    completed_at    TIMESTAMP,
+    "order"         INTEGER DEFAULT 0,            -- ลำดับสำหรับ drag & drop
+    task_date       DATE DEFAULT CURRENT_DATE     -- วันที่ของงาน (แยกตามวัน)
 );
 
--- ตาราง Daily Reports
+-- ตาราง Daily Reports (สรุปงานประจำวัน)
 CREATE TABLE IF NOT EXISTS daily_reports (
-id SERIAL PRIMARY KEY,
-report_date DATE NOT NULL UNIQUE, -- วันที่รายงาน (primary key เพื่อ 1 วัน/1 report)
-summary TEXT,
-report_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    id              SERIAL PRIMARY KEY,
+    report_date     DATE NOT NULL UNIQUE,         -- 1 วัน = 1 รายงาน
+    summary         TEXT,
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- ตาราง History (เก็บ snapshot วันเก่า ๆ เป็น JSON)
+-- ตาราง History (เก็บ snapshot ข้อมูลย้อนหลังแบบ JSON - ใช้เมื่อต้องการย้อนดูแบบสมบูรณ์)
 CREATE TABLE IF NOT EXISTS history (
-id SERIAL PRIMARY KEY,
-date DATE NOT NULL,
-data JSONB, -- เก็บ {tasks: [...], report: '...', reportDate: '...'} เป็น JSON
-created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    id              SERIAL PRIMARY KEY,
+    date            DATE NOT NULL UNIQUE,
+    data            JSONB,                        -- { tasks: [...], report: string, stats: {...} }
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- ตัวอย่าง Index เพื่อให้ query เร็วขึ้น
+CREATE INDEX idx_tasks_task_date ON tasks(task_date);
+CREATE INDEX idx_tasks_done ON tasks(done);
+CREATE INDEX idx_daily_reports_report_date ON daily_reports(report_date);
+```
